@@ -12,10 +12,6 @@ from time import sleep
 import miio
 
 
-class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    daemon_threads = True
-
-
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
     '''
     https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console/34325723#34325723
@@ -36,18 +32,6 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     # Clear Line on Complete
     if iteration == total:
         print('\r' + ' ' * (len(prefix) + length + len(suffix) + 11))
-
-
-def md5(fname):
-    hash_md5 = hashlib.md5()
-    with open(fname, 'rb') as f:
-        for chunk in iter(lambda: f.read(4096), b''):
-            hash_md5.update(chunk)
-    return hash_md5.hexdigest()
-
-
-def findIP():
-    return ((([ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith('127.')] or [[(s.connect(('8.8.8.8', 53)), s.getsockname()[0], s.close()) for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]][0][1]]) + ['no IP found'])[0])
 
 
 def discover_devices():
@@ -97,6 +81,7 @@ def main():
     parser.add_argument('-a', '--address', dest='address', type=str, help='IP address of vacuum cleaner')
     parser.add_argument('-t', '--token', dest='token', type=str, help='Known token of vacuum')
     parser.add_argument('-f', '--firmware', dest='firmware', type=str, help='Path to firmware file')
+    parser.add_argument('-m', '--md5', dest='md5', type=str, help='MD5 hash of firmware file')
 
     args, external = parser.parse_known_args()
 
@@ -105,6 +90,7 @@ def main():
     ip_address = args.address
     known_token = args.token
     firmware = args.firmware
+    md5 = args.md5
 
     if not args.firmware:
         print('You should specify firmware file name to install')
@@ -141,22 +127,11 @@ def main():
         print('error while checking device:', ex)
         exit()
 
-    local_ip = findIP()
-
-    request_handler = http.server.SimpleHTTPRequestHandler
-    httpd = ThreadedHTTPServer(('', 0), request_handler)
-    http_port = httpd.server_address[1]
-
-    print('Starting local http server...')
-    thread = threading.Thread(target=httpd.handle_request, daemon=True)
-    thread.start()
-    print('Serving http server at {}:{}'.format(local_ip, http_port))
-
     ota_params = {
         'mode': 'normal',
         'install': '1',
-        'app_url': 'http://{ip}:{port}/{fw}'.format(ip=local_ip, port=http_port, fw=firmware),
-        'file_md5': md5(firmware),
+        'app_url': firmware,
+        'file_md5': md5,
         'proc': 'dnld install'
     }
     print('Sending ota command with parameters:', json.dumps(ota_params))
@@ -174,8 +149,6 @@ def main():
         printProgressBar(ota_progress, 100, prefix = 'Progress:', length = 50)
         sleep(2)
     print('Firmware downloaded successfully.')
-
-    httpd.server_close()
 
     print('Exiting.')
     exit()
